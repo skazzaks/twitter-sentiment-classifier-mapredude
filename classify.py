@@ -87,7 +87,7 @@ def train_classifier(records):
 
     print("Start training classifier")
     clf = svm.SVC(kernel='linear')
-    clf.fit(vectors, polarities)
+    clf.fit(csr_matrix(vectors), polarities)
 
     return clf
 
