@@ -1,123 +1,79 @@
-# Author: Devon Fritz
-# This file classifies the provided text based on its word features using
-# SVM
-import argparse
-import csv
-from sklearn import svm
-import time
-from scipy.sparse import csr_matrix
-import numpy
-
-def timeit(f, no_params=False):
-
-    def timed(*args, **kw):
-
-        ts = time.time()
-        result = f(*args, **kw)
-        te = time.time()
-
-        print ("func:%r took: %2.4f sec" %
-               (f.__name__, te-ts))
-        return result
-
-    return timed
+from mrjob.job import MRJob
 
 
-class SVM_record:
-    """
-    This class represents one SVM record and stores internally its SVM
-    representation.
-    """
-    def __init__(self, array, all_words):
-        self.record_number = array[0]
-        self.polarity = 1 if int(array[1]) == 1 else -1
-        self.bag_of_words = self.calculate_bag_of_words(array[3], all_words)
-        self.orig_sentence = array[3]
+class TwitterTextClassifierMRJob(MRJob):
+    # An implementation of the MRJob class, which defines methods that allow for
+    # the interaction with Map/Reduce
 
-    def calculate_bag_of_words(self, message, all_words):
-        message_array = message.split()
-        bow = []
+    def perform_update(self, learning_rate, training_vector, polarity, value):
+        for v in training_vector:
+            # update the weight
+            self.word_weights[v] = self.word_weights[v] + \
+                (learning_rate * ((polarity) - value))
 
-        for word in all_words:
-            if word in message_array:
-                bow.append(1)
+    def mapper_init(self):
+        self.word_map = {}
+        self.word_weights = []
+        self.dont = -1
+
+    def mapper(self, _, line):
+        LEARNING_RATE = .1
+        # First, break up the line into its polarity and content
+        line = line.split(',')
+        polarity = 1 if int(line[1]) == 1 else -1
+        content = ','.join(line[3:])
+
+        # The words from the line of text we got
+        words = unicode(content, 'utf-8').split()
+
+        # Go through the words from this line and add them two our 2 persistent
+        # structures, capturing their indices for quick access later
+        feature_list = []
+        for w in words:
+            index = -1
+            if w not in self.word_map.keys():
+                index = len(self.word_map.keys())
+                self.word_map[w] = index
+                self.word_weights.append(0)
             else:
-                bow.append(0)
-
-        return numpy.array(bow)
+                index = self.word_map[w]
 
 
-def create_word_array(infile):
-    """Creates a huge word array that represents all words in the text"""
-    all_words = []
+            if w == "don't" and self.dont == -1:
+                self.dont = index
 
-    with open(infile) as csvfile:
-        reader = csv.reader(csvfile)
-        for line in reader:
-            all_words += line[3].split()
+            feature_list.append(index)
 
-    return all_words
+        # Now that we have the features for this record, let's run the
+        # pereceptron algorithm to update our weighted vector
+        value = 0
+        for v in feature_list:
+            value += self.word_weights[v]
 
+        # we have misclassified if
+        # 1) the example had a positive polarity and we didn't get a
+        # positive number or
+        # 2) the example had a negative polarity and we didn't get a
+        # negative number
+        if ((polarity * value) <= 0):
+            self.perform_update(LEARNING_RATE, feature_list, polarity, value)
 
-def process_file(infile, all_words, perc_test=20):
-    """Collects all rows and builds up the bag of words for them so that they
-    can feed the classifier"""
-    with open(infile) as csvfile:
-        reader = csv.reader(csvfile)
-        records = []
-        for line in reader:
-            records.append(SVM_record(line, all_words))
+    def mapper_final(self):
+        # Now that we filled up the vector with values, let's output them for
+        # the reducer
+        for k, v in self.word_map.iteritems():
+            yield (k, self.word_weights[v])
 
-    cutoff_record = int(len(records) * (perc_test/100))
-    test_records = numpy.array(records[0:cutoff_record])
-    training_records = numpy.array(records[cutoff_record:])
-    return training_records, test_records
+    def reducer(self, word, weights):
+        total = 0
+        elements = 0
+        for w in weights:
+            total += w
+            elements += 1
 
-@timeit
-def train_classifier(records):
-    """This method takes the finished vector records we have build up and
-    feeds them to an SVM classifier based on their polarity
-    """
-    vectors = []
-    polarities = []
+        total = total / elements
 
-    for r in records:
-        vectors.append(r.bag_of_words)
-        polarities.append(r.polarity)
-
-    print("Start training classifier")
-    clf = svm.SVC(kernel='linear')
-    clf.fit(csr_matrix(vectors), polarities)
-
-    return clf
-
-
-@timeit
-def classify_unseen_records(classifier, records):
-    right = 0
-    total = 0
-    total_1 = 0
-    for r in records:
-        result = classifier.predict(r.bag_of_words)
-        if result[0] == r.polarity:
-            right += 1
-
-        if result[0] == 1:
-            total_1 += 1
-        total += 1
-
-    print("total 1s: %i" % total_1)
-    # print("expected: " + str(r.polarity) + " got: " + str(result[0]))
-
-    print("total: %f (%i/%i)" % ((right/float(total)), right, total))
+        yield (word, total)
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="")
-    parser.add_argument("infile")
-    args = parser.parse_args()
-    infile = args.infile
-
-    all_words = list(set(create_word_array(infile)))
-    training_records, test_records = process_file(infile, all_words)
-    classifier = train_classifier(training_records)
-    results = classify_unseen_records(classifier, test_records)
+    TwitterTextClassifierMRJob.run()

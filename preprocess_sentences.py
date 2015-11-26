@@ -29,11 +29,11 @@ def proc_multi_symbol(record):
     """
     # if they have as least two dots, capture it as an expression of an
     # ellipsis thought
-    CONST_ELLIPSIS = ' ELL_NORM'
+    CONST_ELLIPSIS = ' ELL_NORM '
     record = re.sub(r'(\.\.+)', CONST_ELLIPSIS, record)
 
     # normalize the exclamation marks in a similar way
-    CONST_EXCLAMATION = ' EXC_NORM'
+    CONST_EXCLAMATION = ' EXC_NORM '
     record = re.sub(r'(!+)', CONST_EXCLAMATION, record)
     return record
 
@@ -44,11 +44,13 @@ def proc_handle_links(record):
     with a normalizing constant, so that the classifier can train more
     effectively
     """
-    CONST_LINK = 'LINK_NORM'
+    CONST_LINK = ' LINK_NORM '
 
     record = re.sub(r'http://[^\s]*', CONST_LINK, record)
     return record
 
+def proc_lowercase(record):
+    return record.lower()
 
 def proc_handle_ats(record):
     """
@@ -70,4 +72,5 @@ if __name__ == "__main__":
 
     process_file(infile, [proc_handle_ats,
                           proc_handle_links,
-                          proc_multi_symbol])
+                          proc_multi_symbol,
+                          proc_lowercase])
