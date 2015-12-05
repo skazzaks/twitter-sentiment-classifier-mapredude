@@ -57,7 +57,7 @@ def proc_handle_ats(record):
     Removes the @someone links from Twitter's grammar and replaces them with a
     normalizing constant, so that the classifier can train more effectively
     """
-    CONST_AT = 'LINK_AT'
+    CONST_AT = ' LINK_AT '
 
     record = re.sub(r'@[^\s]*', CONST_AT, record)
     return record

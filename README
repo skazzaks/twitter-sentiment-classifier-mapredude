@@ -9,4 +9,7 @@ This code attempts to model the Sentiment Analysis of Twitter data as presented 
 
 Files
 -----
+/loesung
+  classify.py - builds a classifier for the provided input data
+  :q
 
